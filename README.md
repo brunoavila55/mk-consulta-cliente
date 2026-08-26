@@ -46,6 +46,33 @@ GET /consulta-cliente?doc={cpf-ou-cnpj}&key={chave-do-chatbot}
 
 `/healthz` responde `200 ok` para health check do orquestrador.
 
+## Métricas (Prometheus)
+
+`/metrics` expõe métricas no formato Prometheus. Ele **não** é roteado publicamente pelo Traefik (não há router para ele nas labels do `docker-compose.yml`) — só é alcançável de dentro da rede Docker. Aponte o Prometheus para `consulta-cliente:8080/metrics` na rede `traefik-public` (ou coloque o Prometheus nessa mesma rede), por exemplo:
+
+```yaml
+scrape_configs:
+  - job_name: consulta-cliente
+    static_configs:
+      - targets: ["consulta-cliente:8080"]
+```
+
+Métricas expostas:
+
+| Métrica | Tipo | Descrição |
+|---|---|---|
+| `http_requests_total{method,path,status}` | Counter | Requisições recebidas pela API |
+| `http_request_duration_seconds{method,path,status}` | Histogram | Latência das requisições recebidas |
+| `http_requests_in_flight` | Gauge | Requisições sendo processadas agora |
+| `mk_requests_total{endpoint,outcome}` | Counter | Chamadas feitas à API da MK Solutions (sucesso/erro) |
+| `mk_request_duration_seconds{endpoint}` | Histogram | Latência das chamadas à MK Solutions |
+| `mk_request_retries_total{endpoint}` | Counter | Retentativas feitas em chamadas à MK Solutions |
+| `mk_token_cache_total{result}` | Counter | Hits/misses do cache do token de acesso MK |
+| `mk_token_refresh_total{outcome}` | Counter | Autenticações contra `WSAutenticacao.rule` |
+| `consulta_cliente_resultado_total{tipo}` | Counter | Resultado de negócio de cada consulta (`Lead`/`Cliente`) |
+
+Métricas padrão de runtime Go e processo (`go_*`, `process_*`) também são expostas automaticamente pelo `client_golang`.
+
 ## Desenvolvimento local
 
 ```bash
