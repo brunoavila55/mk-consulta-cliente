@@ -9,8 +9,9 @@ import (
 
 // doWithRetry executa req com retentativas em falhas transitórias (erro de
 // rede ou HTTP 5xx). Erros 4xx não são retentados, pois indicam um problema
-// na própria requisição, não uma falha passageira do sistema MK.
-func doWithRetry(ctx context.Context, client *http.Client, req *http.Request, maxAttempts int) (*http.Response, error) {
+// na própria requisição, não uma falha passageira do sistema MK. Devolve
+// também o número de tentativas realizadas, para fins de métricas.
+func doWithRetry(ctx context.Context, client *http.Client, req *http.Request, maxAttempts int) (*http.Response, int, error) {
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
@@ -19,7 +20,7 @@ func doWithRetry(ctx context.Context, client *http.Client, req *http.Request, ma
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		res, err := client.Do(req.Clone(ctx))
 		if err == nil && res.StatusCode < http.StatusInternalServerError {
-			return res, nil
+			return res, attempt, nil
 		}
 
 		if err == nil {
@@ -30,16 +31,16 @@ func doWithRetry(ctx context.Context, client *http.Client, req *http.Request, ma
 		}
 
 		if attempt == maxAttempts {
-			break
+			return nil, attempt, lastErr
 		}
 
 		backoff := time.Duration(attempt) * 150 * time.Millisecond
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, attempt, ctx.Err()
 		case <-time.After(backoff):
 		}
 	}
 
-	return nil, lastErr
+	return nil, maxAttempts, lastErr
 }

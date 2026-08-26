@@ -7,11 +7,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"consulta-cliente/internal/config"
 	"consulta-cliente/internal/handler"
+	"consulta-cliente/internal/metrics"
 	"consulta-cliente/internal/mk"
 )
 
@@ -61,10 +65,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+	// /metrics não é exposto publicamente pelo Traefik (não há router para
+	// ele nas labels do docker-compose) — só acessível dentro da rede
+	// Docker, para o Prometheus fazer scrape diretamente do container.
+	mux.Handle("/metrics", promhttp.Handler())
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           withRequestLogging(logger, mux),
+		Handler:           withObservability(logger, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -97,20 +105,29 @@ func main() {
 	logger.Info("servidor encerrado")
 }
 
-// withRequestLogging registra método, rota, status e duração de cada
-// requisição — sem expor parâmetros de query (podem conter doc/key).
-func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
+// withObservability registra logs estruturados e métricas Prometheus de
+// cada requisição — sem expor parâmetros de query (podem conter doc/key).
+func withObservability(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metrics.HTTPRequestsInFlight.Inc()
+		defer metrics.HTTPRequestsInFlight.Dec()
+
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 
 		next.ServeHTTP(sw, r)
 
+		duration := time.Since(start)
+		status := strconv.Itoa(sw.status)
+
+		metrics.HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, status).Inc()
+		metrics.HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path, status).Observe(duration.Seconds())
+
 		logger.Info("requisição atendida",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sw.status,
-			"duration_ms", time.Since(start).Milliseconds(),
+			"duration_ms", duration.Milliseconds(),
 			"remote_addr", r.RemoteAddr,
 		)
 	})

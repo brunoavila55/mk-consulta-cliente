@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"consulta-cliente/internal/metrics"
 )
 
 // TokenManager obtém e armazena em cache o token de acesso da MK
@@ -49,8 +51,10 @@ func (tm *TokenManager) Get(ctx context.Context) (string, error) {
 	defer tm.mu.Unlock()
 
 	if tm.token != "" && time.Now().Before(tm.expiresAt) {
+		metrics.MKTokenCacheTotal.WithLabelValues("hit").Inc()
 		return tm.token, nil
 	}
+	metrics.MKTokenCacheTotal.WithLabelValues("miss").Inc()
 
 	token, err := tm.fetch(ctx)
 	if err != nil {
@@ -84,13 +88,20 @@ func (tm *TokenManager) fetch(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("montar requisição de autenticação MK: %w", err)
 	}
 
-	res, err := doWithRetry(ctx, tm.client, req, tm.maxAttempts)
+	start := time.Now()
+	res, attempts, err := doWithRetry(ctx, tm.client, req, tm.maxAttempts)
+	metrics.MKRequestDuration.WithLabelValues("WSAutenticacao").Observe(time.Since(start).Seconds())
+	if attempts > 1 {
+		metrics.MKRequestRetriesTotal.WithLabelValues("WSAutenticacao").Add(float64(attempts - 1))
+	}
 	if err != nil {
+		metrics.MKTokenRefreshTotal.WithLabelValues("erro").Inc()
 		return "", fmt.Errorf("chamar WSAutenticacao.rule: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
+		metrics.MKTokenRefreshTotal.WithLabelValues("erro").Inc()
 		return "", fmt.Errorf("WSAutenticacao.rule retornou HTTP %d", res.StatusCode)
 	}
 
@@ -98,11 +109,14 @@ func (tm *TokenManager) fetch(ctx context.Context) (string, error) {
 		Token string `json:"Token"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		metrics.MKTokenRefreshTotal.WithLabelValues("erro").Inc()
 		return "", fmt.Errorf("decodificar resposta de WSAutenticacao.rule: %w", err)
 	}
 	if out.Token == "" {
+		metrics.MKTokenRefreshTotal.WithLabelValues("erro").Inc()
 		return "", fmt.Errorf("WSAutenticacao.rule não retornou token de acesso")
 	}
 
+	metrics.MKTokenRefreshTotal.WithLabelValues("sucesso").Inc()
 	return out.Token, nil
 }

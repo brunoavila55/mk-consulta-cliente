@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"consulta-cliente/internal/metrics"
 	"consulta-cliente/internal/mk"
 )
 
@@ -144,6 +145,8 @@ func (h *ConsultaCliente) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resposta.Cadastros = append(resposta.Cadastros, placeholders()...)
+
+	metrics.ConsultaClienteResultadoTotal.WithLabelValues(resposta.Tipo).Inc()
 
 	writeJSON(w, http.StatusOK, resposta)
 }
