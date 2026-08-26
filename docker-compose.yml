@@ -1,0 +1,19 @@
+services:
+  consulta-cliente:
+    build: .
+    container_name: consulta-cliente
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.consulta-cliente.rule=Host(`api.newlifefibra.com.br`) && PathPrefix(`/consulta-cliente`)"
+      - "traefik.http.routers.consulta-cliente.entrypoints=websecure"
+      - "traefik.http.routers.consulta-cliente.tls.certresolver=letsencrypt"
+      - "traefik.http.services.consulta-cliente.loadbalancer.server.port=8080"
+
+networks:
+  traefik-public:
+    external: true
