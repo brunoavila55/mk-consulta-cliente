@@ -5,15 +5,15 @@ services:
     restart: unless-stopped
     env_file: .env
     networks:
-      - traefik-public
+      - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=traefik-public"
+      - "traefik.docker.network=proxy"
       - "traefik.http.routers.consulta-cliente.rule=Host(`api.newlifefibra.com.br`) && PathPrefix(`/consulta-cliente`)"
       - "traefik.http.routers.consulta-cliente.entrypoints=websecure"
       - "traefik.http.routers.consulta-cliente.tls.certresolver=letsencrypt"
       - "traefik.http.services.consulta-cliente.loadbalancer.server.port=8080"
 
 networks:
-  traefik-public:
+  proxy:
     external: true

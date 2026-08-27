@@ -4,10 +4,10 @@ API em Go que consulta cadastro de cliente na MK Solutions, usada pelo chatbot. 
 
 ## Deploy na VM (Traefik)
 
-Assume que a VM já tem o stack do Traefik rodando na rede externa `traefik-public` (veja instruções à parte). Se ainda não tiver, crie a rede antes:
+Assume que a VM já tem o stack do Traefik rodando na rede externa `proxy` (veja instruções à parte). Se ainda não tiver, crie a rede antes:
 
 ```bash
-docker network create traefik-public
+docker network create proxy
 ```
 
 Depois:
@@ -48,7 +48,7 @@ GET /consulta-cliente?doc={cpf-ou-cnpj}&key={chave-do-chatbot}
 
 ## Métricas (Prometheus)
 
-`/metrics` expõe métricas no formato Prometheus. Ele **não** é roteado publicamente pelo Traefik (não há router para ele nas labels do `docker-compose.yml`) — só é alcançável de dentro da rede Docker. Aponte o Prometheus para `consulta-cliente:8080/metrics` na rede `traefik-public` (ou coloque o Prometheus nessa mesma rede), por exemplo:
+`/metrics` expõe métricas no formato Prometheus. Ele **não** é roteado publicamente pelo Traefik (não há router para ele nas labels do `docker-compose.yml`) — só é alcançável de dentro da rede Docker. Aponte o Prometheus para `consulta-cliente:8080/metrics` na rede `proxy` (ou coloque o Prometheus nessa mesma rede), por exemplo:
 
 ```yaml
 scrape_configs:
