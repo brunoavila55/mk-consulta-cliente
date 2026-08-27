@@ -1,24 +1,24 @@
 # MK Consulta Cliente
 
-API HTTP escrita em Go para receber o CPF informado em uma automação de chatbot, consultar o cadastro correspondente no MK Solutions ERP e devolver os dados em um JSON previsível.
+API HTTP escrita em Go para receber o CPF ou CNPJ informado em uma automação de chatbot, consultar o cadastro correspondente no MK Solutions ERP e devolver os dados em um JSON previsível.
 
 Esta é uma implementação completamente nova. Ela não preserva rotas, variáveis, respostas ou comportamentos de versões anteriores deste repositório.
 
 ## O que a API faz
 
-1. Recebe um CPF pelo endpoint `GET /v1/clientes`.
-2. Remove a pontuação e valida os dígitos verificadores do CPF.
+1. Recebe um CPF ou CNPJ pelo endpoint `GET /v1/clientes`.
+2. Remove a pontuação e valida os dígitos verificadores do documento.
 3. Obtém um token temporário no `WSAutenticacao.rule`, usando:
    - o token fixo do usuário autorizado;
    - a contrassenha gerada na criação do perfil de Webservice;
    - o código de serviço `6` (`Consulta documento`).
-4. Consulta o CPF no `WSMKConsultaDoc.rule`.
+4. Consulta o documento no `WSMKConsultaDoc.rule`.
 5. Normaliza a resposta do MK e a devolve ao chatbot.
 
 ```text
 Chatbot
    |
-   | GET /v1/clientes?cpf=...
+   | GET /v1/clientes?documento=...
    | X-API-Key: ...
    v
 API Go
@@ -40,21 +40,20 @@ Resposta normalizada para o chatbot
 
 Incluído:
 
-- consulta por CPF;
-- validação completa do CPF;
+- consulta por CPF e CNPJ;
+- validação completa dos dígitos verificadores de ambos;
 - autenticação automática no MK;
 - cache em memória do token temporário;
 - suporte ao cadastro principal e à lista `Outros` retornada pelo MK;
 - proteção do endpoint por chave de API;
 - timeouts e erros JSON padronizados;
-- logs estruturados sem CPF ou credenciais;
+- logs estruturados sem CPF, CNPJ ou credenciais;
 - graceful shutdown;
 - execução local ou em Docker;
 - healthcheck do container.
 
 Fora do escopo desta primeira versão:
 
-- CNPJ;
 - consulta de contratos, conexões, faturas ou boletos;
 - classificação entre lead e cliente;
 - banco de dados ou armazenamento de consultas;
@@ -92,7 +91,7 @@ O perfil de Webservice precisa estar ativo, permitir o usuário escolhido e libe
 GET {MK_BASE_URL}/mk/WSMKConsultaDoc.rule
     ?sys=MK0
     &token={token temporário}
-    &doc={CPF sem pontuação}
+    &doc={CPF ou CNPJ sem pontuação}
 ```
 
 ## Configuração
@@ -246,7 +245,7 @@ As métricas específicas da API são:
 | `mk_consulta_cliente_http_request_duration_seconds` | Histogram | Latência total da API, incluindo a comunicação com o MK |
 | `mk_consulta_cliente_http_in_flight_requests` | Gauge | Requisições atualmente em processamento |
 
-O endpoint também publica métricas padrão do runtime Go e do processo, como quantidade de goroutines, uso de memória, CPU e descritores de arquivo. CPF, query strings, tokens e chaves não são incluídos nos labels.
+O endpoint também publica métricas padrão do runtime Go e do processo, como quantidade de goroutines, uso de memória, CPU e descritores de arquivo. CPF, CNPJ, query strings, tokens e chaves não são incluídos nos labels.
 
 #### Configuração do Prometheus
 
@@ -305,22 +304,22 @@ Como `/metrics` é público, limite seu acesso à rede interna, firewall ou prox
 
 ### `GET /v1/clientes`
 
-Consulta um CPF no MK.
+Consulta um CPF ou CNPJ no MK.
 
 Parâmetros:
 
 | Local | Nome | Obrigatório | Exemplo |
 |---|---|:---:|---|
-| Query string | `cpf` | Sim | `529.982.247-25` |
+| Query string | `documento` | Sim | `529.982.247-25` ou `04.252.011/0001-10` |
 | Header | `X-API-Key` | Sim | valor de `CHATBOT_API_KEY` |
 
-O CPF pode ser enviado com ou sem pontos e traço. Letras, quantidade incorreta de dígitos, CPFs repetidos como `11111111111` e dígitos verificadores incorretos são rejeitados antes de qualquer chamada ao MK.
+O documento pode ser enviado com ou sem pontos, traço, barra e espaços. A posição da pontuação não interfere: ela é removida antes da validação. Letras, quantidade incorreta de dígitos, sequências repetidas e dígitos verificadores incorretos são rejeitados antes de qualquer chamada ao MK. O parâmetro antigo `cpf` continua aceito para compatibilidade, mas novas integrações devem usar `documento`.
 
 Exemplo com `curl`:
 
 ```bash
 curl --get 'https://SEU-DOMINIO/v1/clientes' \
-  --data-urlencode 'cpf=529.982.247-25' \
+  --data-urlencode 'documento=04.252.011/0001-10' \
   --header 'X-API-Key: SUA_CHAVE_DO_CHATBOT'
 ```
 
@@ -329,7 +328,7 @@ Exemplo no PowerShell:
 ```powershell
 $headers = @{ "X-API-Key" = "SUA_CHAVE_DO_CHATBOT" }
 Invoke-RestMethod `
-  -Uri "https://SEU-DOMINIO/v1/clientes?cpf=529.982.247-25" `
+  -Uri "https://SEU-DOMINIO/v1/clientes?documento=04.252.011%2F0001-10" `
   -Headers $headers
 ```
 
@@ -387,15 +386,15 @@ Todos os erros produzidos pela API seguem o mesmo formato:
 {
   "status": "erro",
   "erro": {
-    "codigo": "cpf_invalido",
-    "mensagem": "Informe um CPF válido com 11 dígitos."
+    "codigo": "documento_invalido",
+    "mensagem": "Informe um CPF ou CNPJ válido."
   }
 }
 ```
 
 | HTTP | Código | Significado |
 |---:|---|---|
-| `400` | `cpf_invalido` | CPF ausente ou inválido |
+| `400` | `documento_invalido` | CPF ou CNPJ ausente ou inválido |
 | `401` | `nao_autorizado` | Header `X-API-Key` ausente ou incorreto |
 | `502` | `mk_indisponivel` | O MK recusou a autenticação, retornou erro ou uma resposta inválida |
 | `504` | `mk_timeout` | A chamada ao MK ultrapassou o timeout |
@@ -411,10 +410,10 @@ No bloco **Conecte a outro sistema**:
 | Método | `GET` |
 | URL | Domínio HTTPS público da API, sem path e sem credenciais |
 | Path | `/v1/clientes` |
-| Params | Chave `cpf`, com o valor da variável coletada no fluxo |
+| Params | Chave `documento`, com o CPF ou CNPJ coletado no fluxo |
 | Headers | Chave `X-API-Key`, com a chave configurada no servidor |
 
-A sintaxe exata da variável do CPF depende da plataforma do chatbot. Exemplos comuns são `{{cpf}}`, `#cpf` ou a seleção da variável pela interface.
+A sintaxe exata da variável do documento depende da plataforma do chatbot. Exemplos comuns são `{{documento}}`, `#documento` ou a seleção da variável pela interface.
 
 O token fixo do MK e a contrassenha nunca devem ser cadastrados no chatbot. O chatbot conhece somente a chave desta API.
 
@@ -428,7 +427,7 @@ O MK informado está disponível apenas em:
 http://177.72.80.20:8080
 ```
 
-Esse trecho não possui TLS. Por isso, CPF, credenciais do Webservice e dados retornados pelo MK trafegam sem criptografia entre o servidor da API e o ERP. `MK_ALLOW_INSECURE_HTTP=true` existe para tornar essa decisão explícita e evitar ativação acidental em outro ambiente.
+Esse trecho não possui TLS. Por isso, CPF ou CNPJ, credenciais do Webservice e dados retornados pelo MK trafegam sem criptografia entre o servidor da API e o ERP. `MK_ALLOW_INSECURE_HTTP=true` existe para tornar essa decisão explícita e evitar ativação acidental em outro ambiente.
 
 Recomendações:
 
@@ -441,7 +440,7 @@ Recomendações:
 
 ### Proteções implementadas
 
-- CPF não aparece nos logs porque a query string inteira é omitida;
+- CPF e CNPJ não aparecem nos logs porque a query string inteira é omitida;
 - tokens, contrassenha e chave do chatbot não são registrados;
 - a chave do chatbot é comparada em tempo constante;
 - respostas do MK têm limite de tamanho;
@@ -484,7 +483,7 @@ API_ENV_FILE=.env.example docker compose config --quiet
 |   `-- healthcheck/         # healthcheck usado pela imagem Docker
 |-- internal/
 |   |-- config/              # leitura e validação do ambiente
-|   |-- document/            # normalização e validação do CPF
+|   |-- document/            # normalização e validação de CPF e CNPJ
 |   |-- httpapi/             # rotas, autenticação e resposta HTTP
 |   `-- mk/                  # autenticação e cliente do MK Solutions
 |-- .env.example             # modelo sem segredos
@@ -512,11 +511,11 @@ O processo rejeita configurações ausentes, chave do chatbot curta, URL inváli
 - confira se o valor é o mesmo de `CHATBOT_API_KEY`;
 - não coloque a chave no parâmetro da URL.
 
-### `400 cpf_invalido`
+### `400 documento_invalido`
 
 - confirme se o chatbot está enviando a variável correta;
-- confirme se o valor tem 11 dígitos;
-- pontos e traço são aceitos, mas letras não.
+- confirme se o CPF tem 11 dígitos ou o CNPJ tem 14 dígitos;
+- pontos, traço, barra e espaços são aceitos, mas letras não.
 
 ### `502 mk_indisponivel`
 
@@ -548,4 +547,4 @@ O healthcheck usa `HTTP_PORT=8080` dentro do container. O Compose mantém essa p
 - [ ] Subir o Compose e confirmar o estado `healthy`.
 - [ ] Publicar a API por HTTPS.
 - [ ] Configurar URL, path, parâmetro e header no chatbot.
-- [ ] Testar CPF válido, CPF inválido, chave incorreta e indisponibilidade do MK.
+- [ ] Testar CPF e CNPJ válidos, documentos inválidos, chave incorreta e indisponibilidade do MK.

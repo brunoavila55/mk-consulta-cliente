@@ -26,8 +26,8 @@ func NewHandler(client *mk.Client, apiKey string, logger *slog.Logger) http.Hand
 	})
 	mux.Handle("GET /metrics", metrics.handler)
 	mux.Handle("GET /v1/clientes", requireAPIKey(apiKey, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		handleCustomer(writer, request, func(request *http.Request, cpf string) (mk.CustomerResult, error) {
-			return client.CustomerByDocument(request.Context(), cpf)
+		handleCustomer(writer, request, func(request *http.Request, document string) (mk.CustomerResult, error) {
+			return client.CustomerByDocument(request.Context(), document)
 		}, logger)
 	})))
 
@@ -35,13 +35,17 @@ func NewHandler(client *mk.Client, apiKey string, logger *slog.Logger) http.Hand
 }
 
 func handleCustomer(writer http.ResponseWriter, request *http.Request, lookup customerLookup, logger *slog.Logger) {
-	cpf, err := document.NormalizeCPF(request.URL.Query().Get("cpf"))
+	value := request.URL.Query().Get("documento")
+	if value == "" {
+		value = request.URL.Query().Get("cpf") // Compatibilidade com clientes existentes.
+	}
+	normalizedDocument, err := document.NormalizeDocument(value)
 	if err != nil {
-		writeError(writer, http.StatusBadRequest, "cpf_invalido", "Informe um CPF válido com 11 dígitos.")
+		writeError(writer, http.StatusBadRequest, "documento_invalido", "Informe um CPF ou CNPJ válido.")
 		return
 	}
 
-	result, err := lookup(request, cpf)
+	result, err := lookup(request, normalizedDocument)
 	if err != nil {
 		logger.Error("falha na consulta ao MK", "error", err)
 		var networkError net.Error
@@ -83,7 +87,7 @@ func requestLog(next http.Handler, logger *slog.Logger) http.Handler {
 		started := time.Now()
 		recorder := &statusRecorder{ResponseWriter: writer, status: http.StatusOK}
 		next.ServeHTTP(recorder, request)
-		// Deliberately log only the path, never the query string containing a CPF.
+		// Deliberately log only the path, never the query string containing a document.
 		logger.Info("requisição HTTP", "method", request.Method, "path", request.URL.Path, "status", recorder.status, "duration", time.Since(started))
 	})
 }

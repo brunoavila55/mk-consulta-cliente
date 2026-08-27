@@ -13,14 +13,14 @@ import (
 	"mk-consulta-cliente/internal/mk"
 )
 
-func TestHandlerRejectsInvalidCPF(t *testing.T) {
+func TestHandlerRejectsInvalidDocument(t *testing.T) {
 	t.Parallel()
 
 	baseURL, _ := url.Parse("http://mk.invalid")
 	client := mk.NewClient(baseURL, http.DefaultClient, mk.NewStaticTokenProvider("token"))
 	handler := NewHandler(client, "a-valid-api-key-with-24-chars", slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/clientes?cpf=123", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/clientes?documento=123", nil)
 	request.Header.Set("X-API-Key", "a-valid-api-key-with-24-chars")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
