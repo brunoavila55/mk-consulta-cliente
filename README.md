@@ -230,6 +230,79 @@ Resposta `200 OK`:
 
 Esse endpoint confirma que o processo está respondendo. Ele não confirma que as credenciais ou o MK estão funcionando.
 
+### `GET /metrics`
+
+Expõe métricas no formato de texto do Prometheus, sem autenticação e sem chamada ao MK:
+
+```bash
+curl http://127.0.0.1:8080/metrics
+```
+
+As métricas específicas da API são:
+
+| Métrica | Tipo | Descrição |
+|---|---|---|
+| `mk_consulta_cliente_http_requests_total` | Counter | Requisições por método, rota e status HTTP |
+| `mk_consulta_cliente_http_request_duration_seconds` | Histogram | Latência total da API, incluindo a comunicação com o MK |
+| `mk_consulta_cliente_http_in_flight_requests` | Gauge | Requisições atualmente em processamento |
+
+O endpoint também publica métricas padrão do runtime Go e do processo, como quantidade de goroutines, uso de memória, CPU e descritores de arquivo. CPF, query strings, tokens e chaves não são incluídos nos labels.
+
+#### Configuração do Prometheus
+
+Se o Prometheus estiver instalado diretamente na mesma máquina da API, acrescente ao `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: mk-consulta-cliente
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - 127.0.0.1:8080
+```
+
+Se o Prometheus executar em outro container no mesmo arquivo Compose e na mesma rede, use o nome do serviço e a porta interna:
+
+```yaml
+scrape_configs:
+  - job_name: mk-consulta-cliente
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api:8080
+```
+
+Depois de alterar o arquivo, valide e recarregue o Prometheus:
+
+```bash
+promtool check config prometheus.yml
+curl -X POST http://127.0.0.1:9090/-/reload
+```
+
+O reload por HTTP exige que o Prometheus tenha sido iniciado com `--web.enable-lifecycle`. Sem essa opção, reinicie o serviço. Em **Status > Targets**, o job `mk-consulta-cliente` deve aparecer como `UP`.
+
+Consultas PromQL úteis:
+
+```promql
+# Requisições por segundo nos últimos 5 minutos
+sum(rate(mk_consulta_cliente_http_requests_total[5m])) by (route, status)
+
+# Latência p95 por rota nos últimos 5 minutos
+histogram_quantile(0.95,
+  sum(rate(mk_consulta_cliente_http_request_duration_seconds_bucket[5m])) by (le, route)
+)
+
+# Percentual de respostas 5xx nos últimos 5 minutos
+100 * sum(rate(mk_consulta_cliente_http_requests_total{status=~"5.."}[5m]))
+  / sum(rate(mk_consulta_cliente_http_requests_total[5m]))
+
+# Requisições em andamento
+mk_consulta_cliente_http_in_flight_requests
+```
+
+Como `/metrics` é público, limite seu acesso à rede interna, firewall ou proxy reverso. Ele não deve ser publicado na internet sem restrição.
+
 ### `GET /v1/clientes`
 
 Consulta um CPF no MK.

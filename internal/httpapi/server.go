@@ -19,17 +19,19 @@ import (
 type customerLookup func(*http.Request, string) (mk.CustomerResult, error)
 
 func NewHandler(client *mk.Client, apiKey string, logger *slog.Logger) http.Handler {
+	metrics := newAPIMetrics()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.Handle("GET /metrics", metrics.handler)
 	mux.Handle("GET /v1/clientes", requireAPIKey(apiKey, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		handleCustomer(writer, request, func(request *http.Request, cpf string) (mk.CustomerResult, error) {
 			return client.CustomerByDocument(request.Context(), cpf)
 		}, logger)
 	})))
 
-	return requestLog(mux, logger)
+	return metrics.instrument(requestLog(mux, logger))
 }
 
 func handleCustomer(writer http.ResponseWriter, request *http.Request, lookup customerLookup, logger *slog.Logger) {
