@@ -1,5 +1,7 @@
 # MK Consulta Cliente
 
+Para criar outras integrações seguindo o mesmo padrão, consulte [GUIA_CRIAR_NOVAS_APIS.md](GUIA_CRIAR_NOVAS_APIS.md).
+
 API HTTP escrita em Go para receber o CPF ou CNPJ informado em uma automação de chatbot, consultar o cadastro correspondente no MK Solutions ERP e devolver os dados em um JSON previsível.
 
 Esta é uma implementação completamente nova. Ela não preserva rotas, variáveis, respostas ou comportamentos de versões anteriores deste repositório.
