@@ -1,3 +1,3 @@
 .env
 *.exe
-/bin/
+coverage.out

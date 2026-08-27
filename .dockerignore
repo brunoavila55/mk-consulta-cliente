@@ -1,2 +1,6 @@
 .git
-*.md
+.gitignore
+.env
+*.exe
+coverage.out
+README.md
